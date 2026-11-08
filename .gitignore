@@ -1,0 +1,6 @@
+.monitor
+__pycache__/
+*.py[cod]
+.build/
+native/MonitorMenuBar
+native/Monitor.app/
