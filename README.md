@@ -65,8 +65,9 @@ python3 -m monitorbot agent-check --backend claude
 | ChatGPT | 來源狀態可辨識 | 尚無直接對話讀取連接，不能宣稱已記錄完整 ChatGPT 對話 |
 | Outlook | Microsoft Graph 委派授權 | 需設定應用程式 client ID、完成登入，可能需要組織管理員同意 |
 | Teams | Microsoft Graph 委派授權 | 同上，涵蓋可授權存取的聊天與頻道，不保證所有組織內容 |
+| Gerrit | HTTPS REST API，匿名或帳號 HTTP token | 指定 query，收集 change 更新、說明及已發布 review 留言，不包含 diff 與草稿 |
 
-Gerrit 不在第一版範圍。沒有安裝原生 Office 也能讀取指定的本機 Office 文件，但不會因此取得 Office 網頁版中的全部操作。
+Gerrit 設定與權限範圍見 [來源設定](docs/sources.md#gerrit)。沒有安裝原生 Office 也能讀取指定的本機 Office 文件，但不會因此取得 Office 網頁版中的全部操作。
 
 每種來源各有設定。例如明確指定 Office 文件範圍：
 
@@ -145,7 +146,7 @@ python3 -m monitorbot report
 
 ## 背景執行
 
-Mac 上方選單列提供清單圖示與目前待辦數量。點開可分別查看「輪到你處理」與「等待他人」，順序沿用追蹤系統的優先程度。點任務可看下一步與期限，逾期與前置工作超時會標示。
+Mac 上方選單列提供清單圖示與輪到你處理的數量。選單先顯示待辦、等待、逾期、待確認、背景排程是否啟用及最後收集檢查時間，來源異常與完整任務細節可展開查看。讀取清單的時間放在來源詳情，不代表資料剛完成收集。點開可分別查看「輪到你處理」與「等待他人」，順序沿用追蹤系統的優先程度。點任務可看下一步與期限，逾期與前置工作超時會標示。
 
 選單也提供新增一句話待辦、每日確認與完整清單、重新整理。清單每分鐘同步，點開時重新讀取，不呼叫模型。關閉圖示不會停止背景收集，可用 `python3 -m monitorbot menubar start` 重新開啟。
 
@@ -243,3 +244,45 @@ python3 scripts/verify_runtime.py --workflow
 - [模組介面](docs/architecture.md)
 - [工作用語](CONTEXT.md)
 - [實際驗證紀錄](docs/verification.md)
+
+## Windows 背景執行與驗證
+
+Windows 使用目前使用者的 Task Scheduler，在登入的互動工作階段執行既有排程迴圈。請將專案放在固定位置，安裝 Python 3.9 以上含 tkinter，並讓 Codex 或 Claude CLI 可由該使用者啟動。Windows 通常需要另外安裝時區資料。
+
+```powershell
+py -m pip install tzdata
+py -m monitorbot init
+py -m monitorbot doctor
+py -m monitorbot install
+py -m monitorbot start --login
+py -m monitorbot status
+py -m monitorbot review
+py -m monitorbot stop --login
+```
+
+`install` 只產生排程定義。`start` 註冊並啟動，`--login` 加入登入啟動。`stop` 停止這次執行，`stop --login` 同時移除本工具排程，不刪資料。`deploy` 是 macOS 專用搬移流程，Windows 直接從固定專案目錄執行。Windows 每日確認使用 tkinter；選單列 app 仍是 macOS 專用。
+
+Windows Office 來源需明確設定各來源的 `paths`，例如 `C:/Work`；不使用 macOS Spotlight。Chrome 預設讀取 `%LOCALAPPDATA%/Google/Chrome/User Data`。既有檔案及 API 來源共用同一套篩選、任務與週報流程。
+
+可先在任何平台執行合成測試，再到 Windows 驗證真實排程。
+
+```powershell
+py -m unittest tests.test_windows tests.test_gerrit -q
+py scripts/verify_windows.py --help
+```
+
+實機工具的命令與限制見 [Windows 驗證](docs/windows.md)。Windows ACL 沿用資料目錄的使用者權限；POSIX `0600` 並不等於 Windows ACL，請使用自己的私人資料目錄。
+
+## 使用合成資料預覽 Mac 工具列
+
+這個預覽只讀取範例快照，停用新增與每日確認，不連線來源或呼叫模型。需要 macOS 與 Swift 編譯器。在專案目錄執行：
+
+```sh
+mkdir -p .build
+swiftc -O -framework Cocoa -module-cache-path .build/ModuleCache native/MenuBar.swift -o .build/MonitorPreview
+.build/MonitorPreview --snapshot tests/fixtures/menubar.json
+```
+
+點選新出現、顯示 6 項待辦的圖示。範例任務皆標示「合成預覽」，包含逾期、等待超時、待確認與來源尚未連接的狀態。完成後在預覽選單選擇「關閉圖示」。這不會停止原本的背景收集。
+
+若只需檢查選單階層，在最後一個命令加上 `--dump-menu`。它會輸出 JSON 後結束，不開啟圖示。範例資料由原生選單測試檢查，避免快照格式與程式不同步。

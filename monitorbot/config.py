@@ -30,7 +30,7 @@ DEFAULTS = {
     },
     "sources": {name: {"enabled": True, "include": [], "exclude": []}
                 for name in ("chrome", "word", "excel", "powerpoint", "codex",
-                             "claude", "chatgpt", "outlook", "teams")},
+                             "claude", "chatgpt", "outlook", "teams", "gerrit")},
     "microsoft": {"client_id": "", "tenant": "organizations"},
     "cleanup": {"enabled": False, "interval_days": 30, "policy": None},
     "improvement": {"enabled": True, "auto_apply": True},
@@ -109,6 +109,10 @@ def validate_config(config):
         if not isinstance(settings, dict) or type(settings.get("enabled", True)) is not bool:
             raise ValueError("each source must be an object with a boolean enabled field")
         validate_filters(settings)
+    gerrit = config["sources"].get("gerrit", {})
+    for field in ("url", "query", "username", "token_env"):
+        if field in gerrit and (not isinstance(gerrit[field], str) or not gerrit[field].strip()):
+            raise ValueError("sources.gerrit." + field + " must be a nonempty string")
     if type(config["cleanup"]["interval_days"]) is not int or config["cleanup"]["interval_days"] < 1:
         raise ValueError("cleanup interval_days must be positive")
     for settings in [config["agents"]["default"]] + list(config["agents"].get("roles", {}).values()):

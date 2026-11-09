@@ -67,6 +67,13 @@ class AgentTests(unittest.TestCase):
         self.assertIn("--safe-mode", args)
         self.assertNotIn("--bare", args)
 
+    def test_gerrit_source_token_is_not_inherited_by_model_cli(self):
+        self.runner.config["sources"] = {"gerrit": {"token_env": "monitor_test_gerrit_token"}}
+        with patch.dict(os.environ, MONITOR_TEST_GERRIT_TOKEN="source-secret"), \
+             patch("monitorbot.agents.subprocess.Popen", return_value=self.process()) as launch:
+            self.runner.run("tracker", {}, SCHEMA)
+        self.assertNotIn("MONITOR_TEST_GERRIT_TOKEN", launch.call_args.kwargs["env"])
+
     def test_failed_cli_does_not_leak_stdout_or_stderr(self):
         with patch("monitorbot.agents.subprocess.Popen", return_value=self.process("SECRET", "SECRET", 1)):
             with self.assertRaises(AgentError) as error:

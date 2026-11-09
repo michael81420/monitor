@@ -74,3 +74,33 @@ Teams 訊息列表本身包含 body。來源規則可阻止內容傳入 agent �
 ## 目前尚未實測的能力
 
 測試使用合成 Chrome、Office、對話與 Graph 回應，不會把測試事件寫入正式資料庫。真實帳號登入、租戶權限、Microsoft 分頁量、Spotlight 完整度與 Chromium 資料庫鎖定須在實際環境確認。
+
+## Gerrit
+
+Gerrit 使用唯讀 HTTPS REST API。設定伺服器最終網址與工作範圍，網址可以包含 Gerrit 部署子路徑。匿名公開資料省略 `username` 與 `token_env`。需要授權時，將 HTTP token 放在環境變數，設定只保存變數名稱。
+
+```json
+{
+  "sources": {
+    "gerrit": {
+      "url": "https://review.example.com",
+      "query": "owner:self OR reviewer:self",
+      "username": "your-account",
+      "token_env": "MONITOR_GERRIT_TOKEN",
+      "exclude": [{"project": "personal/*"}]
+    }
+  }
+}
+```
+
+以既有 `config set --json` 套用設定，再執行 `poll`。背景工作也必須能讀取該環境變數。macOS launchd 不繼承終端機 shell 的 export；請在實際啟動環境提供變數。Windows 可設定該使用者的持久環境變數，並重新啟動排程。
+
+token 來自 Gerrit 帳號設定中的 HTTP authentication。程式以 Basic authentication 存取 `/a/`，拒絕明文 HTTP、網址帳密與轉址。不要將 token 直接放進 `config.json`、query 或 URL。組織自訂 SSO、cookie 登入與自簽憑證設定尚未納入。
+
+每次收集依固定時間範圍查詢更新的 change，完成全部分頁才前進游標。每個 `server + change number + updated` 是一筆去重活動。索引保存專案、branch、status 與回查定位，不保存 description、review 訊息或 inline comments 正文。`project`、`branch`、`status` 與 `change_number` 可用於 include/exclude。排除規則先於正文請求執行。
+
+涵蓋目前 change 的 commit message、review 訊息及已發布 inline comments；不包含程式碼 diff、草稿或每個中間狀態的完整歷史。兩次輪詢之間若 change 多次更新，只會取得查詢時的版本。讀取期間再次更新會回報錯誤並保留游標。之後 `source read` 取得新版本時會明確標註內容已更新。
+
+每個請求有 16 MiB 上限，單輪最多 1000 頁。超過限制需縮小 query 或回溯期間。Gerrit 搜尋索引可能延遲，既有兩分鐘重疊不能保證補到長時間延遲的更新。
+
+協定依據為 [Gerrit REST API](https://gerrit-review.googlesource.com/Documentation/rest-api.html)、[change 查詢與詳細資料](https://gerrit-review.googlesource.com/Documentation/rest-api-changes.html) 與 [時間搜尋語法](https://gerrit-review.googlesource.com/Documentation/user-search.html)。

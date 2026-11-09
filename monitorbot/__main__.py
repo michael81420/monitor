@@ -165,7 +165,7 @@ def parser():
         if name in ("start", "stop"):
             control.add_argument("--login", action="store_true", help="also enable or remove this user's login startup")
     menu = commands.add_parser("menubar").add_subparsers(dest="action", required=True)
-    for name in ("build", "install", "start", "stop", "status"):
+    for name in ("build", "install", "start", "stop", "status", "snapshot"):
         control = menu.add_parser(name)
         if name == "stop":
             control.add_argument("--login", action="store_true", help="also remove menu bar login startup")
@@ -176,7 +176,8 @@ def _private_json(path, value):
     temporary = path.with_name(path.name + ".tmp")
     descriptor = os.open(str(temporary), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     try:
-        os.fchmod(descriptor, 0o600)
+        if hasattr(os, "fchmod"):
+            os.fchmod(descriptor, 0o600)
         with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
             json.dump(value, stream)
         temporary.replace(path)
@@ -247,7 +248,7 @@ def _dispatch(args):
     home = data_path(args.home)
     if args.command == "deploy":
         return install.deploy(home)
-    if args.command == "menubar":
+    if args.command == "menubar" and args.action != "snapshot":
         from . import menubar
         if args.action == "stop":
             return menubar.stop(home, login=args.login)
@@ -285,6 +286,11 @@ def _dispatch(args):
         home.mkdir(parents=True, exist_ok=True, mode=0o700)
         return _microsoft_login(config, args.login_action)
     with Store(home) as store:
+        if args.command == "menubar" and args.action == "snapshot":
+            return {"tasks": store.list_tasks(), "question_count": len(store.list_questions()),
+                    "pending_events": store.count_events(unprocessed=True, excluded=False),
+                    "source_health": store.health(), "generated_at": utc_now(),
+                    "background": install.status(home), "last_poll": store.get_meta("last_poll")}
         if args.command == "propose":
             from .service import apply_proposal
             with cycle_lock(home):
@@ -406,7 +412,7 @@ def main(argv=None):
     try:
         args = parser().parse_args(argv)
         result = _dispatch(args)
-        print(json.dumps(result, ensure_ascii=False, allow_nan=False, default=str))
+        print(json.dumps(result, ensure_ascii=True, allow_nan=False, default=str))
         return 0
     except KeyboardInterrupt:
         return 130
@@ -415,7 +421,7 @@ def main(argv=None):
             "message": "Agent request failed; check doctor, CLI login, quota and persistence verification."}}), file=sys.stderr)
         return 2
     except (ValueError, KeyError, OSError, RuntimeError, sqlite3.Error) as exc:
-        print(json.dumps({"error": {"type": type(exc).__name__, "message": str(exc)}}, ensure_ascii=False), file=sys.stderr)
+        print(json.dumps({"error": {"type": type(exc).__name__, "message": str(exc)}}, ensure_ascii=True), file=sys.stderr)
         return 2
 
 

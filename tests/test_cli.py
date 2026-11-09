@@ -59,6 +59,29 @@ class CommandTests(unittest.TestCase):
         with Store(self.home) as store:
             self.assertEqual(store.get_event(task["evidence_ids"][0])["source"], "manual")
 
+    def test_menu_snapshot_reads_tasks_health_and_backlog_without_model(self):
+        self.init()
+        task = self.ok("add", "Read snapshot")
+        with Store(self.home) as store:
+            store.set_meta("last_poll", "2026-11-09T00:00:00+00:00")
+        with patch.object(cli.AgentRunner, "run", side_effect=AssertionError("must not call model")), \
+             patch.object(cli.install, "status", return_value={"supported": True, "loaded": False}) as status:
+            snapshot = self.ok("menubar", "snapshot")
+        self.assertEqual([task["id"]], [item["id"] for item in snapshot["tasks"]])
+        self.assertEqual(0, snapshot["question_count"])
+        self.assertEqual("ok", snapshot["source_health"]["manual"]["status"])
+        self.assertIn("generated_at", snapshot)
+        self.assertEqual("2026-11-09T00:00:00+00:00", snapshot["last_poll"])
+        self.assertFalse(snapshot["background"]["loaded"])
+        status.assert_called_once_with(self.home.resolve())
+
+    def test_multilingual_cli_result_survives_legacy_windows_pipe_encoding(self):
+        result = subprocess.run([sys.executable, "-m", "monitorbot", "--home", str(self.home),
+                                 "add", "測試 Windows 任務"], env=dict(os.environ, PYTHONIOENCODING="cp1252"),
+                                capture_output=True, timeout=30)
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual("測試 Windows 任務", json.loads(result.stdout)["title"])
+
     def test_deploy_command_dispatches_without_opening_the_store(self):
         with patch.object(cli.install, "deploy", return_value={"deployed": True}) as deploy, \
              patch.object(cli, "Store", side_effect=AssertionError("must not open store before moving it")):

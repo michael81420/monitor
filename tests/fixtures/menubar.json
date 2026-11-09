@@ -1,0 +1,94 @@
+{
+  "tasks": [
+    {
+      "id": "synthetic-0",
+      "title": "合成預覽：確認測試項目 1",
+      "status": "active",
+      "project": "合成預覽",
+      "next_action": "核對測試結果",
+      "waiting_for": "",
+      "due_at": "2020-01-01T00:00:00+00:00",
+      "waiting_until": null
+    },
+    {
+      "id": "synthetic-1",
+      "title": "合成預覽：確認測試項目 2",
+      "status": "active",
+      "project": "合成預覽",
+      "next_action": "核對測試結果",
+      "waiting_for": "",
+      "due_at": null,
+      "waiting_until": null
+    },
+    {
+      "id": "synthetic-2",
+      "title": "合成預覽：確認測試項目 3",
+      "status": "active",
+      "project": "合成預覽",
+      "next_action": "核對測試結果",
+      "waiting_for": "",
+      "due_at": null,
+      "waiting_until": null
+    },
+    {
+      "id": "synthetic-3",
+      "title": "合成預覽：確認測試項目 4",
+      "status": "active",
+      "project": "合成預覽",
+      "next_action": "核對測試結果",
+      "waiting_for": "",
+      "due_at": null,
+      "waiting_until": null
+    },
+    {
+      "id": "synthetic-4",
+      "title": "合成預覽：確認測試項目 5",
+      "status": "active",
+      "project": "合成預覽",
+      "next_action": "核對測試結果",
+      "waiting_for": "",
+      "due_at": null,
+      "waiting_until": null
+    },
+    {
+      "id": "synthetic-5",
+      "title": "合成預覽：確認測試項目 6",
+      "status": "active",
+      "project": "合成預覽",
+      "next_action": "核對測試結果",
+      "waiting_for": "",
+      "due_at": null,
+      "waiting_until": null
+    },
+    {
+      "id": "synthetic-6",
+      "title": "合成預覽：等待韌體版本",
+      "status": "waiting",
+      "project": "合成預覽",
+      "next_action": "核對測試結果",
+      "waiting_for": "開發負責人",
+      "due_at": null,
+      "waiting_until": "2020-01-01T00:00:00+00:00"
+    }
+  ],
+  "question_count": 2,
+  "pending_events": 3,
+  "generated_at": "2026-11-09T02:22:04.017696+00:00",
+  "last_poll": "2026-11-09T01:22:04.017696+00:00",
+  "background": {
+    "supported": true,
+    "loaded": true
+  },
+  "source_health": {
+    "gerrit": {
+      "status": "unconfigured",
+      "detail": "合成預覽：尚未設定 Gerrit 伺服器",
+      "checked_at": "2026-11-09T02:22:04.017696+00:00"
+    },
+    "codex": {
+      "status": "ok",
+      "detail": "合成預覽：來源正常",
+      "checked_at": "2026-11-09T02:22:04.017696+00:00"
+    }
+  }
+}

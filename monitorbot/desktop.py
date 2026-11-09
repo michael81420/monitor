@@ -1,5 +1,6 @@
-"""Native macOS dialogs keep the first daily interface small."""
+"""Desktop dialogs keep the first daily interface small."""
 
+import os
 import subprocess
 import sys
 from datetime import datetime
@@ -18,7 +19,54 @@ def _osascript(script, args):
     return result.stdout.rstrip("\n")
 
 
+def _windows_dialog(title, prompt, choices=None):
+    try:
+        import tkinter as tk
+        from tkinter import simpledialog, ttk
+    except ImportError as exc:
+        raise RuntimeError("Windows dialogs require Python with tkinter") from exc
+    try:
+        root = tk.Tk()
+    except tk.TclError as exc:
+        raise RuntimeError("Windows dialogs require an interactive desktop") from exc
+    answer = []
+    try:
+        root.withdraw()
+        if choices is None:
+            return simpledialog.askstring(title, prompt, parent=root) or ""
+        root.title(title)
+        root.resizable(True, False)
+        frame = ttk.Frame(root, padding=16)
+        frame.grid(sticky="nsew")
+        ttk.Label(frame, text=prompt, wraplength=560, justify="left").grid(
+            row=0, column=0, columnspan=2, sticky="w", pady=(0, 12))
+        selected = tk.StringVar(value=choices[0] if choices else "")
+        for index, choice in enumerate(choices):
+            tk.Radiobutton(frame, text=choice, value=choice, variable=selected,
+                           wraplength=560, justify="left", anchor="w").grid(
+                row=index + 1, column=0, columnspan=2, sticky="w", pady=3)
+        def confirm():
+            answer.append(selected.get())
+            root.destroy()
+        ttk.Button(frame, text="稍後", command=root.destroy).grid(
+            row=len(choices) + 1, column=0, sticky="e", pady=(12, 0))
+        ttk.Button(frame, text="確認", command=confirm).grid(
+            row=len(choices) + 1, column=1, sticky="e", padx=(8, 0), pady=(12, 0))
+        root.bind("<Return>", lambda event: confirm())
+        root.bind("<Escape>", lambda event: root.destroy())
+        root.deiconify()
+        root.mainloop()
+        return answer[0] if answer else ""
+    finally:
+        try:
+            root.destroy()
+        except tk.TclError:
+            pass
+
+
 def choose(title, prompt, choices):
+    if sys.platform == "win32":
+        return _windows_dialog(title, prompt, choices)
     script = '''on run argv
         set options to items 3 thru -1 of argv
         set picked to choose from list options with title (item 1 of argv) with prompt (item 2 of argv) OK button name "確認" cancel button name "稍後"
@@ -29,6 +77,8 @@ def choose(title, prompt, choices):
 
 
 def _text(title, prompt):
+    if sys.platform == "win32":
+        return _windows_dialog(title, prompt)
     script = '''on run argv
         set picked to display dialog (item 2 of argv) with title (item 1 of argv) default answer "" buttons {"取消", "儲存"} default button "儲存"
         return text returned of picked
@@ -69,8 +119,8 @@ def daily_review(store, config):
     path = root / "daily-todo.md"
     path.write_text(todo_markdown(store, config), encoding="utf-8")
     path.chmod(0o600)
-    if sys.platform != "darwin":
-        return {"path": str(path), "popup": False, "reason": "native dialogs currently require macOS"}
+    if sys.platform not in ("darwin", "win32"):
+        return {"path": str(path), "popup": False, "reason": "desktop dialogs require macOS or Windows"}
     runner = AgentRunner(config, root)
     questions = store.list_questions()
     if questions and not refresh_questions(store, config, runner):
@@ -109,7 +159,10 @@ def daily_review(store, config):
         summary = "\n".join(task["title"] for task in store.list_tasks()[:10]) or "目前沒有待處理事項。"
         action = choose("每日待處理清單", summary, ["開啟完整清單", "關閉"])
         if action == "開啟完整清單":
-            subprocess.Popen(["open", "-e", str(path)])
+            if sys.platform == "win32":
+                os.startfile(str(path))
+            else:
+                subprocess.Popen(["open", "-e", str(path)])
     except RuntimeError:
         pass
     return {"path": str(path), "answered": answered}

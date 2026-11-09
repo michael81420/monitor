@@ -187,6 +187,11 @@ class AgentRunner:
         if len(prompt) > settings["max_input_chars"]:
             raise AgentError("Agent input exceeds configured size limit")
         env = os.environ.copy()
+        token_env = self.config.get("sources", {}).get("gerrit", {}).get("token_env")
+        if token_env:
+            for name in list(env):
+                if name.casefold() == token_env.casefold():
+                    env.pop(name)
         for name in ("OPENAI_API_KEY", "CODEX_API_KEY", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN",
                      "DEBUG", "RUST_LOG", "CLAUDE_CODE_DEBUG_LOGS_DIR", "CLAUDE_CODE_DEBUG"):
             env.pop(name, None)

@@ -18,6 +18,7 @@ METADATA_FIELDS = {
     "conversation_id", "chat_id", "team_id", "channel_id", "message_id",
     "reply_to_id", "graph_path", "version", "content_available", "coverage",
     "document_id", "app", "application", "updated_at", "kind", "offset",
+    "server", "change_number", "project", "branch", "status",
 }
 TASK_FIELDS = {
     "id", "title", "outcome", "project", "kind", "ownership", "status",

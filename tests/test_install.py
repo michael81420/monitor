@@ -14,6 +14,9 @@ class InstallTests(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
         self.root = Path(self.directory.name)
+        platform = patch.object(install.sys, "platform", "darwin")
+        platform.start()
+        self.addCleanup(platform.stop)
         start = patch.object(menubar, "start", return_value={"loaded": True})
         stop = patch.object(menubar, "stop", return_value={"loaded": False})
         self.menu_start, self.menu_stop = start.start(), stop.start()
@@ -72,7 +75,7 @@ class InstallTests(unittest.TestCase):
         self.menu_stop.assert_called_once_with(self.root.resolve(), login=False)
 
     def test_unsupported_platform_does_not_invoke_launchctl(self):
-        with patch.object(install.sys, "platform", "win32"), \
+        with patch.object(install.sys, "platform", "linux"), \
              patch.object(install.subprocess, "run", side_effect=AssertionError("must not invoke launchctl")):
             self.assertFalse(install.status(self.root)["supported"])
             with self.assertRaisesRegex(RuntimeError, "macOS"):

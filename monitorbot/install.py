@@ -1,4 +1,4 @@
-"""Prepare and control this installation's macOS LaunchAgent."""
+"""Prepare and control this installation's background scheduler."""
 
 import hashlib
 import json
@@ -206,6 +206,9 @@ def _identity(data_dir):
 
 
 def prepare(data_dir, python=None, project_dir=None):
+    if sys.platform == "win32":
+        from . import windows
+        return windows.prepare(data_dir, python=python, project_dir=project_dir)
     root, label, domain = _identity(data_dir)
     root.mkdir(parents=True, exist_ok=True, mode=0o700)
     project = Path(project_dir or Path(__file__).resolve().parent.parent).resolve()
@@ -244,6 +247,9 @@ def _require_mac():
 
 
 def status(data_dir):
+    if sys.platform == "win32":
+        from . import windows
+        return windows.control(data_dir, "status")
     root, label, domain = _identity(data_dir)
     result = {"path": str(root / "launchagent.plist"), "label": label,
               "prepared": (root / "launchagent.plist").is_file(), "loaded": False,
@@ -285,6 +291,9 @@ def _set_login(data_dir, enabled):
 
 
 def start(data_dir, login=False):
+    if sys.platform == "win32":
+        from . import windows
+        return windows.control(data_dir, "start", login=login)
     _require_mac()
     root, label, domain = _identity(data_dir)
     path = root / "launchagent.plist"
@@ -305,6 +314,9 @@ def start(data_dir, login=False):
 
 
 def stop(data_dir, login=False):
+    if sys.platform == "win32":
+        from . import windows
+        return windows.control(data_dir, "stop", login=login)
     _require_mac()
     root, label, domain = _identity(data_dir)
     from . import menubar

@@ -25,7 +25,7 @@ from xml.etree import ElementTree as ET
 from .filters import included
 
 
-SOURCES = ("chrome", "word", "excel", "powerpoint", "codex", "claude", "chatgpt", "outlook", "teams")
+SOURCES = ("chrome", "word", "excel", "powerpoint", "codex", "claude", "chatgpt", "outlook", "teams", "gerrit")
 GRAPH = "https://graph.microsoft.com/v1.0"
 OFFICE = {"word": ".docx", "excel": ".xlsx", "powerpoint": ".pptx"}
 SCOPES = ["offline_access", "User.Read", "Mail.Read", "Chat.Read", "Team.ReadBasic.All",
@@ -108,6 +108,9 @@ def collect(config, cursors, since, now) -> List[SourceBatch]:
                 events, detail = _sessions(source, config, cutoff, now)
             elif source == "chatgpt":
                 raise Unconfigured("ChatGPT conversation access is not connected; browser visits do not include conversation content")
+            elif source == "gerrit":
+                from .gerrit import collect_changes
+                events, detail = collect_changes(config, cutoff, now)
             else:
                 events, detail = _microsoft(source, config, cutoff, now)
             events = [e for e in events if _allowed(e, config)]
@@ -418,7 +421,8 @@ def _save_token(config, response, previous=None):
         flags |= os.O_NOFOLLOW
     fd = os.open(str(temporary), flags, 0o600)
     try:
-        os.fchmod(fd, 0o600)
+        if hasattr(os, "fchmod"):
+            os.fchmod(fd, 0o600)
         with os.fdopen(fd, "w", encoding="utf-8") as stream:
             json.dump(payload, stream)
         os.replace(temporary, path)
@@ -596,6 +600,9 @@ def read_content(event, config) -> str:
         raise SourceError("Source is excluded by current filters")
     source, metadata = event["source"], event.get("metadata", {})
     max_chars = int(config.get("content_max_chars", 100000))
+    if source == "gerrit":
+        from .gerrit import read_change
+        return _bounded(read_change(event, config), max_chars)
     if source in OFFICE:
         path = _path(metadata["path"])
         current = str(path.stat().st_mtime_ns)

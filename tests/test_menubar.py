@@ -3,6 +3,8 @@ import io
 import json
 from pathlib import Path
 import plistlib
+import shutil
+import sys
 import subprocess
 import tempfile
 import unittest
@@ -165,6 +167,112 @@ class MenuBarTests(unittest.TestCase):
                 operation.assert_called_once_with(self.data, login=False)
             else:
                 operation.assert_called_once_with(self.data)
+
+
+@unittest.skipUnless(sys.platform == "darwin" and shutil.which("swiftc"), "native menu checks require macOS and Swift")
+class NativeMenuTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.directory = tempfile.TemporaryDirectory()
+        cls.addClassCleanup(cls.directory.cleanup)
+        cls.root = Path(cls.directory.name)
+        cls.binary = cls.root / "menu"
+        source = Path(__file__).resolve().parents[1] / "native/MenuBar.swift"
+        result = subprocess.run([shutil.which("swiftc"), "-framework", "Cocoa", "-module-cache-path",
+                                 str(cls.root / "cache"), str(source), "-o", str(cls.binary)],
+                                capture_output=True, text=True, timeout=180)
+        if result.returncode:
+            raise AssertionError(result.stderr)
+
+    def inspect(self, tasks=(), health=None, questions=0, background_enabled=True, last_poll=None):
+        path = self.root / "snapshot.json"
+        path.write_text(json.dumps({"tasks": list(tasks), "question_count": questions, "pending_events": 12,
+            "source_health": health or {}, "generated_at": "2026-11-09T00:00:00+00:00",
+            "background": {"supported": True, "loaded": background_enabled}, "last_poll": last_poll}))
+        result = subprocess.run([str(self.binary), "--snapshot", str(path), "--dump-menu"],
+                                capture_output=True, text=True, timeout=15)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return json.loads(result.stdout)
+
+    def task(self, index, waiting=False):
+        return dict(id=str(index), title="Task " + str(index), status="waiting" if waiting else "active",
+                    project="Display", next_action="Review results", waiting_for="Colleague" if waiting else "",
+                    due_at="2020-01-01T00:00:00+00:00" if index == 0 else None,
+                    waiting_until="2020-01-01T00:00:00+00:00" if waiting else None)
+
+    def test_native_menu_keeps_summary_and_five_tasks_visible_with_remaining_tasks_available(self):
+        rows = self.inspect([self.task(i, waiting=i == 8) for i in range(9)], questions=3,
+            health={"gerrit": {"status": "unconfigured", "detail": "Configure Gerrit URL", "checked_at": None}})
+        titles = [row["title"] for row in rows]
+        self.assertEqual(titles[0], "輪到你 8 項  ·  等待 1 項")
+        self.assertIn("1 項交付已逾期", titles)
+        self.assertIn("待你確認 3 題…", titles)
+        self.assertEqual(len([title for title in titles if title.startswith("Task ")]), 5)
+        remaining = next(row for row in rows if row["title"] == "其餘 3 項待辦")
+        self.assertEqual([row["title"] for row in remaining["items"]], ["Task 5", "Task 6", "Task 7"])
+        waiting = next(row for row in rows if row["title"] == "等待他人（1）")
+        self.assertEqual(waiting["items"][0]["title"], "Task 8  ·  前置超時")
+        source = next(row for row in rows if row["title"] == "1 個來源需處理")
+        self.assertEqual(source["items"][0]["title"], "gerrit  ·  尚未連接")
+        self.assertEqual(source["items"][0]["items"][0]["title"], "Configure Gerrit URL")
+
+    def test_native_empty_menu_does_not_claim_unchecked_sources_are_healthy(self):
+        rows = self.inspect()
+        titles = [row["title"] for row in rows]
+        self.assertEqual(titles[0], "輪到你 0 項  ·  等待 0 項")
+        self.assertIn("目前沒有待辦", titles)
+        self.assertIn("來源尚未檢查", titles)
+        self.assertNotIn("已檢查來源正常", titles)
+        waiting = next(row for row in rows if row["title"] == "等待他人（0）")
+        self.assertEqual(waiting["items"][0]["title"], "目前沒有等待事項")
+
+    def test_saved_preview_fixture_matches_the_native_snapshot_contract(self):
+        path = Path(__file__).parent / "fixtures/menubar.json"
+        result = subprocess.run([str(self.binary), "--snapshot", str(path), "--dump-menu"],
+                                capture_output=True, text=True, timeout=15)
+        self.assertEqual(0, result.returncode, result.stderr)
+        titles = [row["title"] for row in json.loads(result.stdout)]
+        self.assertIn("輪到你 6 項  ·  等待 1 項", titles)
+        self.assertIn("其餘 1 項待辦", titles)
+        self.assertIn("1 個來源需處理", titles)
+
+    def test_native_invalid_snapshot_fails_without_claiming_an_empty_queue(self):
+        path = self.root / "invalid.json"
+        path.write_text('{"tasks": []}')
+        result = subprocess.run([str(self.binary), "--snapshot", str(path), "--dump-menu"],
+                                capture_output=True, text=True, timeout=15)
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(result.stdout, "")
+        self.assertIn("Could not read menu snapshot", result.stderr)
+
+    def test_native_menu_distinguishes_database_reads_from_collection_and_stopped_background(self):
+        rows = self.inspect(background_enabled=False, last_poll="2020-01-01T00:00:00+00:00")
+        titles = [row["title"] for row in rows]
+        self.assertIn("背景收集未啟用", titles)
+        collected = next(title for title in titles if title.startswith("最後收集檢查 "))
+        self.assertIn("2020", collected)
+        self.assertFalse(any(title.startswith("清單更新 ") for title in titles))
+        self.assertIn("背景排程已啟用", [row["title"] for row in self.inspect()])
+
+    def test_native_menu_reads_real_cli_snapshot_from_an_isolated_database(self):
+        project = Path(__file__).resolve().parents[1]
+        home = self.root / "CLI data 中文"
+        command = [sys.executable, "-m", "monitorbot", "--home", str(home)]
+        added = subprocess.run(command + ["add", "驗證原生選單"], cwd=project,
+                               capture_output=True, text=True, timeout=30)
+        self.assertEqual(0, added.returncode, added.stderr)
+        snapshot = subprocess.run(command + ["menubar", "snapshot"], cwd=project,
+                                  capture_output=True, text=True, timeout=30)
+        self.assertEqual(0, snapshot.returncode, snapshot.stderr)
+        path = self.root / "cli-snapshot.json"
+        path.write_text(snapshot.stdout)
+        result = subprocess.run([str(self.binary), "--snapshot", str(path), "--dump-menu"],
+                                capture_output=True, text=True, timeout=15)
+        self.assertEqual(0, result.returncode, result.stderr)
+        titles = [row["title"] for row in json.loads(result.stdout)]
+        self.assertIn("驗證原生選單", titles)
+        self.assertIn("背景收集未啟用", titles)
+        self.assertIn("尚未收集資料", titles)
 
 
 if __name__ == "__main__":
