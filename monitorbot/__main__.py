@@ -36,6 +36,7 @@ import time
 import uuid
 
 from .agents import AgentError, AgentRunner
+from .privacy import is_private, set_private
 from .config import data_path, initialize, load_config, save_config, utc_now, validate_config
 from .filters import included, validate_filters
 from . import install, sources
@@ -165,7 +166,7 @@ def parser():
         if name in ("start", "stop"):
             control.add_argument("--login", action="store_true", help="also enable or remove this user's login startup")
     menu = commands.add_parser("menubar").add_subparsers(dest="action", required=True)
-    for name in ("build", "install", "start", "stop", "status", "snapshot"):
+    for name in ("build", "install", "start", "stop", "status", "snapshot", "todo", "add"):
         control = menu.add_parser(name)
         if name == "stop":
             control.add_argument("--login", action="store_true", help="also remove menu bar login startup")
@@ -176,9 +177,8 @@ def _private_json(path, value):
     temporary = path.with_name(path.name + ".tmp")
     descriptor = os.open(str(temporary), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     try:
-        if hasattr(os, "fchmod"):
-            os.fchmod(descriptor, 0o600)
         with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+            set_private(temporary)
             json.dump(value, stream)
         temporary.replace(path)
     finally:
@@ -197,8 +197,8 @@ def _microsoft_login(config, action):
         return {key: value for key, value in result.items() if key != "device_code"}
     if not path.is_file():
         raise ValueError("Run source microsoft login-start first")
-    if path.stat().st_mode & 0o077:
-        raise ValueError("pending Microsoft sign-in file must have mode 0600")
+    if not is_private(path):
+        raise ValueError("pending Microsoft sign-in file must have owner-only permissions")
     pending = json.loads(path.read_text(encoding="utf-8"))
     if now >= pending["expires_at"]:
         path.unlink()
@@ -240,7 +240,7 @@ def _doctor(store, config):
             "agents": available, "source_health": store.health(),
             "microsoft": {"client_id_configured": bool(config["microsoft"].get("client_id")),
                           "token_file_exists": auth.is_file(),
-                          "token_file_private": not bool(auth.stat().st_mode & 0o077) if auth.is_file() else None},
+                          "token_file_private": is_private(auth) if auth.is_file() else None},
             "note": "Availability is not authentication or complete source coverage. No token contents were read."}
 
 
@@ -250,6 +250,11 @@ def _dispatch(args):
         return install.deploy(home)
     if args.command == "menubar" and args.action != "snapshot":
         from . import menubar
+        if args.action in {"todo", "add"}:
+            if sys.platform != "win32":
+                raise RuntimeError("This notification icon action requires Windows")
+            from . import windows_tray
+            return {"todo": windows_tray.open_todo, "add": windows_tray.add_task}[args.action](home)
         if args.action == "stop":
             return menubar.stop(home, login=args.login)
         return {"build": menubar.build, "install": menubar.prepare,

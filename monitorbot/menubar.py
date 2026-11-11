@@ -27,6 +27,9 @@ def _project(data_dir, project_dir=None):
 
 
 def build(data_dir, project_dir=None):
+    if sys.platform == "win32":
+        from . import windows_tray
+        return windows_tray.prepare(data_dir, project_dir=project_dir)
     install._require_mac()
     project = _project(data_dir, project_dir)
     directory = project / "native"
@@ -82,6 +85,9 @@ def build(data_dir, project_dir=None):
 
 
 def prepare(data_dir, python=None, project_dir=None):
+    if sys.platform == "win32":
+        from . import windows_tray
+        return windows_tray.prepare(data_dir, python=python, project_dir=project_dir)
     root, label, domain = _identity(data_dir)
     executable = Path(python or sys.executable).resolve()
     if not executable.is_file():
@@ -134,6 +140,9 @@ def _set_login(data_dir, enabled):
 
 
 def status(data_dir):
+    if sys.platform == "win32":
+        from . import windows_tray
+        return windows_tray.status(data_dir)
     root, label, domain = _identity(data_dir)
     path, link = root / "menubar-launchagent.plist", _login_path(root)
     result = {"path": str(path), "label": label, "prepared": path.is_file(),
@@ -152,6 +161,9 @@ def status(data_dir):
 
 
 def start(data_dir, login=True, python=None, project_dir=None):
+    if sys.platform == "win32":
+        from . import windows_tray
+        return windows_tray.start(data_dir, login=login, python=python, project_dir=project_dir)
     install._require_mac()
     root, label, domain = _identity(data_dir)
     current = status(root)
@@ -175,6 +187,9 @@ def start(data_dir, login=True, python=None, project_dir=None):
 
 
 def stop(data_dir, login=False):
+    if sys.platform == "win32":
+        from . import windows_tray
+        return windows_tray.stop(data_dir, login=login)
     install._require_mac()
     root, label, domain = _identity(data_dir)
     if login:

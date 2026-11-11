@@ -88,6 +88,7 @@ class CommandTests(unittest.TestCase):
             self.assertTrue(self.ok("deploy")["deployed"])
         deploy.assert_called_once_with(self.home.resolve())
 
+    @unittest.skipUnless(os.name == "posix", "macOS deployment requires POSIX filesystem semantics")
     def test_workspace_cli_uses_installed_runtime_and_one_database(self):
         workspace = self.home / "workspace"
         workspace.mkdir()
@@ -207,7 +208,7 @@ class CommandTests(unittest.TestCase):
         self.init()
         token = self.home / "microsoft-auth.json"
         token.write_text("THIS IS NOT JSON AND MUST NOT BE READ")
-        token.chmod(0o600)
+        cli.set_private(token)
         with patch.object(cli.shutil, "which", return_value=None):
             result = self.ok("doctor")
         self.assertTrue(result["microsoft"]["token_file_exists"])
@@ -285,7 +286,8 @@ class CommandTests(unittest.TestCase):
             result = self.ok("source", "microsoft", "login-start")
         self.assertNotIn("device_code", result)
         pending = self.home / "microsoft-login.json"
-        self.assertEqual(pending.stat().st_mode & 0o777, 0o600)
+        if os.name == "posix":
+            self.assertEqual(pending.stat().st_mode & 0o777, 0o600)
         with patch.object(cli.time, "time", return_value=1001), patch.object(cli.sources, "finish_microsoft_login") as finish:
             result = self.ok("source", "microsoft", "login-poll")
         self.assertEqual(result["status"], "waiting_interval")

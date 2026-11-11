@@ -93,11 +93,14 @@ class AgentTests(unittest.TestCase):
         process.pid = 123456
         process.communicate.side_effect = [subprocess.TimeoutExpired("codex", 1), ("", "")]
         with patch("monitorbot.agents.subprocess.Popen", return_value=process):
-            with patch("monitorbot.agents.os.killpg") as kill:
+            with patch("monitorbot.agents.os.killpg", create=True) as kill:
                 with self.assertRaisesRegex(AgentError, "timed out"):
                     self.runner.run("tracker", {}, SCHEMA)
         if os.name == "posix":
             kill.assert_called_once()
+        else:
+            kill.assert_not_called()
+            process.terminate.assert_called_once()
 
     def test_role_config_overrides_default_without_model_guessing(self):
         runner = AgentRunner({"agents": {"default": {"backend": "codex"},

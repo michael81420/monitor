@@ -292,8 +292,9 @@ def _set_login(data_dir, enabled):
 
 def start(data_dir, login=False):
     if sys.platform == "win32":
-        from . import windows
-        return windows.control(data_dir, "start", login=login)
+        from . import windows, windows_tray
+        current = windows.control(data_dir, "start", login=login)
+        return dict(current, menubar=windows_tray.start(data_dir))
     _require_mac()
     root, label, domain = _identity(data_dir)
     path = root / "launchagent.plist"

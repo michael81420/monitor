@@ -23,6 +23,7 @@ from typing import Any, List
 from xml.etree import ElementTree as ET
 
 from .filters import included
+from .privacy import is_private, set_private
 
 
 SOURCES = ("chrome", "word", "excel", "powerpoint", "codex", "claude", "chatgpt", "outlook", "teams", "gerrit")
@@ -421,9 +422,8 @@ def _save_token(config, response, previous=None):
         flags |= os.O_NOFOLLOW
     fd = os.open(str(temporary), flags, 0o600)
     try:
-        if hasattr(os, "fchmod"):
-            os.fchmod(fd, 0o600)
         with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            set_private(temporary)
             json.dump(payload, stream)
         os.replace(temporary, path)
     finally:
@@ -449,8 +449,8 @@ def _access_token(config):
     path = _token_path(config)
     if not path.is_file():
         raise Unconfigured("Microsoft delegated sign-in is not complete; run the Microsoft login command")
-    if path.stat().st_mode & 0o077:
-        raise SourceError("Microsoft token file must have mode 0600")
+    if not is_private(path):
+        raise SourceError("Microsoft token file must have owner-only permissions")
     with path.open(encoding="utf-8") as stream:
         token = json.load(stream)
     if float(token.get("expires_at", 0)) <= time.time() + 120:

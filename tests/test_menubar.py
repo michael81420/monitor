@@ -1,6 +1,7 @@
 import contextlib
 import io
 import json
+import os
 from pathlib import Path
 import plistlib
 import shutil
@@ -60,8 +61,9 @@ class MenuBarTests(unittest.TestCase):
         self.assertNotIn("StartInterval", definition)
         self.assertEqual(definition["StandardOutPath"], "/dev/null")
         self.assertEqual(definition["StandardErrorPath"], str(self.data / "menubar-errors.log"))
-        self.assertEqual(Path(prepared["path"]).stat().st_mode & 0o777, 0o600)
-        self.assertEqual(Path(prepared["binary"]).stat().st_mode & 0o777, 0o700)
+        if os.name == "posix":
+            self.assertEqual(Path(prepared["path"]).stat().st_mode & 0o777, 0o600)
+            self.assertEqual(Path(prepared["binary"]).stat().st_mode & 0o777, 0o700)
         bundle = plistlib.loads((Path(prepared["app"]) / "Contents/Info.plist").read_bytes())
         self.assertEqual(bundle["CFBundleIdentifier"], prepared["label"])
         self.assertTrue(bundle["LSUIElement"])
@@ -98,6 +100,7 @@ class MenuBarTests(unittest.TestCase):
                 menubar.build(self.data, self.project)
         self.assertEqual((contents / "Info.plist").read_bytes(), info)
 
+    @unittest.skipUnless(os.name == "posix", "macOS login startup uses POSIX symlinks")
     def test_start_bootstraps_own_gui_label_and_enables_login(self):
         prepared = self.prepare()
         with patch.object(menubar, "prepare", return_value=prepared) as prepare, \
@@ -109,6 +112,7 @@ class MenuBarTests(unittest.TestCase):
         self.assertTrue(menubar._login_path(self.data).is_symlink())
         prepare.assert_called_once()
 
+    @unittest.skipUnless(os.name == "posix", "macOS login startup uses POSIX symlinks")
     def test_running_icon_is_not_recompiled_or_restarted(self):
         self.prepare()
         with patch.object(menubar, "prepare", side_effect=AssertionError("must not rebuild running icon")), \
@@ -116,6 +120,7 @@ class MenuBarTests(unittest.TestCase):
             self.assertTrue(menubar.start(self.data)["loaded"])
         self.assertEqual(run.call_count, 1)
 
+    @unittest.skipUnless(os.name == "posix", "macOS login startup uses POSIX symlinks")
     def test_start_reopens_icon_after_successful_user_quit(self):
         prepared = self.prepare()
         waiting = subprocess.CompletedProcess([], 0, "state = not running\nlast exit code = 0\n", "")
@@ -125,6 +130,7 @@ class MenuBarTests(unittest.TestCase):
         self.assertEqual(run.call_args_list[1].args[0], ["launchctl", "kickstart", prepared["domain"] + "/" + prepared["label"]])
         self.assertEqual(result["pid"], "123")
 
+    @unittest.skipUnless(os.name == "posix", "macOS login startup uses POSIX symlinks")
     def test_stop_only_stops_gui_and_optionally_removes_its_login_link(self):
         prepared = self.prepare()
         menubar._set_login(self.data, True)
@@ -147,7 +153,7 @@ class MenuBarTests(unittest.TestCase):
     def test_unconfigured_or_unsupported_installation_fails_clearly(self):
         with self.assertRaisesRegex(ValueError, "Run deploy"):
             menubar.build(self.data)
-        with patch.object(menubar.sys, "platform", "win32"), \
+        with patch.object(menubar.sys, "platform", "linux"), \
              patch.object(menubar.subprocess, "run", side_effect=AssertionError("must not launch")):
             self.assertFalse(menubar.status(self.data)["supported"])
             with self.assertRaisesRegex(RuntimeError, "macOS"):

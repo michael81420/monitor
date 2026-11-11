@@ -286,3 +286,5 @@ swiftc -O -framework Cocoa -module-cache-path .build/ModuleCache native/MenuBar.
 點選新出現、顯示 6 項待辦的圖示。範例任務皆標示「合成預覽」，包含逾期、等待超時、待確認與來源尚未連接的狀態。完成後在預覽選單選擇「關閉圖示」。這不會停止原本的背景收集。
 
 若只需檢查選單階層，在最後一個命令加上 `--dump-menu`。它會輸出 JSON 後結束，不開啟圖示。範例資料由原生選單測試檢查，避免快照格式與程式不同步。
+
+Windows 通知區圖示可用 `python -m monitorbot menubar start` 啟動。使用方式見 [Windows 說明](docs/windows.md#隨時從工作列查看狀態)。

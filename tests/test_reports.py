@@ -51,7 +51,7 @@ class ReportTests(unittest.TestCase):
             second = save_report(root, "weekly", self.start, self.end, {"markdown": "# 更正版", "conflicts": []})
             self.assertEqual(first, same)
             self.assertNotEqual(first, second)
-            self.assertEqual(first.read_text(), "# 第一版\n")
+            self.assertEqual(first.read_text(encoding="utf-8"), "# 第一版\n")
             self.assertEqual(len(list(Path(root).rglob("*.md"))), 2)
             self.assertEqual(list(Path(root).rglob(".report-*")), [])
 

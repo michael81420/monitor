@@ -49,8 +49,15 @@ class ImprovementTests(unittest.TestCase):
         proposal["changes"][0]["path"] = "tests/test_example.py"
         with self.assertRaisesRegex(VerificationBlocked, "immutable"):
             _proposal_changes(proposal, original, self.root)
+
+    def test_symlink_targets_are_not_allowed_for_improvements(self):
         link = self.root / "monitorbot" / "link.py"
-        link.symlink_to(Path(self.temp.name) / "outside")
+        try:
+            link.symlink_to(Path(self.temp.name) / "outside")
+        except OSError as exc:
+            if getattr(exc, "winerror", None) == 1314:
+                self.skipTest("Windows account lacks symbolic-link privilege")
+            raise
         self.assertFalse(_allowed("monitorbot/link.py", self.root))
 
     def test_missing_os_sandbox_blocks_autoapply_and_records_issue(self):
@@ -299,7 +306,12 @@ class ImprovementTests(unittest.TestCase):
 
     def test_profile_resolves_paths_and_only_allows_literal_root_data(self):
         link = Path(self.temp.name) / "candidate-link"
-        link.symlink_to(self.root, target_is_directory=True)
+        try:
+            link.symlink_to(self.root, target_is_directory=True)
+        except OSError as exc:
+            if getattr(exc, "winerror", None) == 1314:
+                self.skipTest("Windows account lacks symbolic-link privilege")
+            raise
         profile = _profile(link, [link / "tests"])
         self.assertIn('(allow file-read-data (literal "/"))', profile)
         self.assertIn('(subpath ' + json.dumps(str(self.root)) + ')', profile)

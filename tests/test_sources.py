@@ -4,6 +4,7 @@ import sqlite3
 import tempfile
 import unittest
 import zipfile
+from contextlib import closing
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
@@ -28,7 +29,7 @@ class SourcesTests(unittest.TestCase):
         profile.mkdir()
         history = profile / "History"
         epoch = datetime(1601, 1, 1, tzinfo=timezone.utc)
-        with sqlite3.connect(history) as db:
+        with closing(sqlite3.connect(history)) as db, db:
             db.executescript("CREATE TABLE urls(id INTEGER PRIMARY KEY,url TEXT,title TEXT);"
                              "CREATE TABLE visits(id INTEGER PRIMARY KEY,url INTEGER,visit_time INTEGER);")
             db.execute("INSERT INTO urls VALUES(1,?,?)", ("https://example.com/work?code=secret&q=HDR#token", "HDR"))
@@ -64,7 +65,7 @@ class SourcesTests(unittest.TestCase):
         profiles = [self.root / "Default", self.root / "Profile 1"]
         for profile in profiles:
             profile.mkdir()
-            with sqlite3.connect(profile / "History") as db:
+            with closing(sqlite3.connect(profile / "History")) as db, db:
                 db.executescript("CREATE TABLE urls(id INTEGER PRIMARY KEY,url TEXT,title TEXT);"
                                  "CREATE TABLE visits(id INTEGER PRIMARY KEY,url INTEGER,visit_time INTEGER);")
                 db.execute("INSERT INTO urls VALUES(1,?,?)", ("https://example.invalid/synthetic", "Synthetic visit"))
@@ -171,7 +172,7 @@ class SourcesTests(unittest.TestCase):
         self.assertNotIn("private", event["title"])
         self.assertEqual("private HDR question", event["content"])
         self.assertEqual("private HDR question", sources.read_content(event, config))
-        path.write_text(path.read_text().replace("private HDR question", "edited message"))
+        path.write_text(path.read_text(encoding="utf-8").replace("private HDR question", "edited message"), encoding="utf-8")
         with self.assertRaisesRegex(sources.SourceError, "changed"):
             sources.read_content(event, config)
 
@@ -221,8 +222,9 @@ class SourcesTests(unittest.TestCase):
         sources._save_token(config, {"access_token": "access", "refresh_token": "refresh", "expires_in": 300,
                                     "unexpected_body": "must not persist"})
         path = self.root / "microsoft-auth.json"
-        self.assertEqual(0o600, path.stat().st_mode & 0o777)
-        saved = json.loads(path.read_text())
+        if os.name == "posix":
+            self.assertEqual(0o600, path.stat().st_mode & 0o777)
+        saved = json.loads(path.read_text(encoding="utf-8"))
         self.assertNotIn("unexpected_body", saved)
         self.assertEqual("access", saved["access_token"])
 

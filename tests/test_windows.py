@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 import subprocess
 import tempfile
@@ -6,7 +7,7 @@ import unittest
 from unittest.mock import patch
 from xml.etree import ElementTree as ET
 
-from monitorbot import desktop, install, windows
+from monitorbot import desktop, install, privacy, sources, windows, windows_tray
 
 
 class WindowsTests(unittest.TestCase):
@@ -40,6 +41,7 @@ class WindowsTests(unittest.TestCase):
         result = dict(registered=True, loaded=True, login_enabled=True, state=4, last_exit_code=0)
         completed = subprocess.CompletedProcess([], 0, json.dumps(result), "")
         with patch.object(install.sys, "platform", "win32"), \
+             patch.object(windows_tray, "start", return_value={"loaded": True}), \
              patch.object(windows.subprocess, "run", return_value=completed) as run:
             self.assertTrue(install.start(self.root, login=True)["loaded"])
             request = json.loads(run.call_args.kwargs["input"])
@@ -72,3 +74,19 @@ class WindowsTests(unittest.TestCase):
             dialog.assert_called_with("Title", "Prompt", ["selected"])
             self.assertEqual("selected", desktop._text("Title", "Prompt"))
             dialog.assert_called_with("Title", "Prompt")
+
+    @unittest.skipUnless(os.name == "nt", "requires actual Windows ACLs")
+    def test_microsoft_token_roundtrip_requires_owner_only_windows_acl(self):
+        config = {"data_dir": str(self.root), "microsoft": {"client_id": "synthetic-app"}}
+        sources._save_token(config, {"access_token": "synthetic-token", "expires_in": 3600})
+        path = self.root / "microsoft-auth.json"
+        self.assertTrue(privacy.is_private(path))
+        self.assertEqual("synthetic-token", sources._access_token(config))
+        subprocess.run(["icacls.exe", str(path), "/grant", "*S-1-1-0:(R)"],
+                       capture_output=True, check=True)
+        self.assertFalse(privacy.is_private(path))
+        with self.assertRaisesRegex(sources.SourceError, "owner-only"):
+            sources._access_token(config)
+        privacy.set_private(path)
+        self.assertTrue(privacy.is_private(path))
+        self.assertEqual("synthetic-token", sources._access_token(config))

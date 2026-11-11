@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 import plistlib
 import subprocess
@@ -38,7 +39,8 @@ class InstallTests(unittest.TestCase):
         self.assertEqual(definition["StandardOutPath"], "/dev/null")
         self.assertEqual(Path(definition["StandardErrorPath"]), self.root.resolve() / "service-errors.log")
         self.assertEqual(set(definition["EnvironmentVariables"]), {"PATH"})
-        self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+        if os.name == "posix":
+            self.assertEqual(path.stat().st_mode & 0o777, 0o600)
         self.assertFalse(result["started"])
 
     def test_different_data_directories_have_different_labels(self):
@@ -81,6 +83,7 @@ class InstallTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "macOS"):
                 install.start(self.root)
 
+    @unittest.skipUnless(os.name == "posix", "macOS login startup uses POSIX symlinks")
     def test_login_startup_is_explicit_and_does_not_overwrite_other_files(self):
         install.prepare(self.root)
         with patch.object(install.Path, "home", return_value=self.root / "user"):
@@ -96,6 +99,7 @@ class InstallTests(unittest.TestCase):
                 install._set_login(self.root, True)
             self.assertEqual("belongs to another program", path.read_text())
 
+    @unittest.skipUnless(os.name == "posix", "macOS login startup uses POSIX symlinks")
     def test_login_stop_removes_startup_even_if_job_is_not_loaded(self):
         install.prepare(self.root)
         missing = subprocess.CompletedProcess([], 113, "", "not found")
@@ -107,6 +111,8 @@ class InstallTests(unittest.TestCase):
             self.assertFalse(result["login_enabled"])
 
     def workspace(self, token_file=None):
+        if os.name != "posix":
+            self.skipTest("macOS deployment requires POSIX permissions and symlinks")
         workspace = self.root / "workspace"
         (workspace / "monitorbot").mkdir(parents=True)
         (workspace / "monitorbot/__main__.py").write_text("# synthetic runtime\n")

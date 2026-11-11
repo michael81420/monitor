@@ -122,7 +122,7 @@ class RegressionTests(unittest.TestCase):
         for kind, ids in covered.items():
             self.assertEqual(expected, ids, kind)
         for path in paths.values():
-            text = Path(path).read_text()
+            text = Path(path).read_text(encoding="utf-8")
             self.assertTrue(all(identifier in text for identifier in expected))
 
     def test_smoke_audit_streams_large_logs_and_finds_marker_across_chunk_boundary(self):
@@ -180,7 +180,7 @@ class RegressionTests(unittest.TestCase):
         source = Path(service.__file__).resolve().parent
         shutil.copytree(source, copied / "monitorbot", ignore=shutil.ignore_patterns("__pycache__"))
         target = copied / "monitorbot" / "service.py"
-        before = target.read_text()
+        before = target.read_text(encoding="utf-8")
         broken = "raise SyntaxError('synthetic interrupted service edit')\n"
         target.write_text(broken)
         home = self.root / "recovery-home"
@@ -194,15 +194,15 @@ class RegressionTests(unittest.TestCase):
         for option in (["--home", str(home)], ["--home=" + str(home)]):
             with self.subTest(option=option):
                 target.write_text(broken)
-                record = json.loads(rollback.read_text())
+                record = json.loads(rollback.read_text(encoding="utf-8"))
                 record["status"] = "prepared"
                 rollback.write_text(json.dumps(record))
                 result = subprocess.run([sys.executable, "-m", "monitorbot", *option, "schema"],
                     cwd=copied, env=environment, capture_output=True, text=True, timeout=20)
                 self.assertEqual(0, result.returncode, result.stderr)
                 self.assertIn("tasks", json.loads(result.stdout)["properties"])
-                self.assertEqual(before, target.read_text())
-                self.assertEqual("rolled_back", json.loads(rollback.read_text())["status"])
+                self.assertEqual(before, target.read_text(encoding="utf-8"))
+                self.assertEqual("rolled_back", json.loads(rollback.read_text(encoding="utf-8"))["status"])
 
     def test_invalid_filters_preserve_config_and_cleanup_starts_disabled(self):
         original = (self.root / "config.json").read_bytes()

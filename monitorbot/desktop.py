@@ -19,42 +19,146 @@ def _osascript(script, args):
     return result.stdout.rstrip("\n")
 
 
+def _windows_root():
+    added = []
+    try:
+        for name, prefix, script in (("TCL_LIBRARY", "tcl", "init.tcl"),
+                                     ("TK_LIBRARY", "tk", "tk.tcl")):
+            if name in os.environ:
+                continue
+            for library in sorted((Path(sys.base_prefix) / "tcl").glob(prefix + "*"), reverse=True):
+                if not (library / script).is_file():
+                    continue
+                # Tcl caches startup paths at import and can misread non-ASCII Windows paths.
+                try:
+                    path = os.path.relpath(library)
+                except ValueError:
+                    path = str(library)
+                os.environ[name] = path
+                added.append(name)
+                break
+        try:
+            import tkinter as tk
+        except ImportError as exc:
+            raise RuntimeError("Windows dialogs require Python with tkinter") from exc
+        try:
+            return tk.Tk()
+        except tk.TclError as exc:
+            message = ("Windows dialogs require a working Python Tcl/Tk installation"
+                       if "init.tcl" in str(exc) else "Windows dialogs require an interactive desktop")
+            raise RuntimeError(message) from exc
+    finally:
+        for name in added:
+            os.environ.pop(name, None)
+
+
 def _windows_dialog(title, prompt, choices=None):
-    try:
-        import tkinter as tk
-        from tkinter import simpledialog, ttk
-    except ImportError as exc:
-        raise RuntimeError("Windows dialogs require Python with tkinter") from exc
-    try:
-        root = tk.Tk()
-    except tk.TclError as exc:
-        raise RuntimeError("Windows dialogs require an interactive desktop") from exc
+    root = _windows_root()
+    import tkinter as tk
+    from tkinter import ttk
     answer = []
     try:
         root.withdraw()
-        if choices is None:
-            return simpledialog.askstring(title, prompt, parent=root) or ""
         root.title(title)
-        root.resizable(True, False)
-        frame = ttk.Frame(root, padding=16)
-        frame.grid(sticky="nsew")
-        ttk.Label(frame, text=prompt, wraplength=560, justify="left").grid(
-            row=0, column=0, columnspan=2, sticky="w", pady=(0, 12))
+        root.resizable(True, True)
+        root.columnconfigure(0, weight=1)
+        root.rowconfigure(1, weight=1)
+        style = ttk.Style(root)
+        style.configure("Monitor.TFrame", background="#f5f7fb")
+        style.configure("Monitor.TLabel", background="#f5f7fb", foreground="#18263b",
+                        font=("Microsoft JhengHei UI", 10))
+        style.configure("Monitor.Title.TLabel", background="#f5f7fb", foreground="#18263b",
+                        font=("Microsoft JhengHei UI", 16, "bold"))
+        style.configure("Monitor.Hint.TLabel", background="#f5f7fb", foreground="#536177",
+                        font=("Microsoft JhengHei UI", 9))
+        style.configure("Monitor.TButton", font=("Microsoft JhengHei UI", 10), padding=(12, 6))
+        root.configure(background="#f5f7fb")
+        header = ttk.Frame(root, padding=(24, 20, 24, 12), style="Monitor.TFrame")
+        header.grid(row=0, column=0, sticky="ew")
+        ttk.Label(header, text="工作助理", style="Monitor.Hint.TLabel").pack(anchor="w")
+        heading = ttk.Label(header, text=title, style="Monitor.Title.TLabel", wraplength=560)
+        heading.pack(anchor="w", pady=(4, 0))
+        body = ttk.Frame(root, padding=(24, 0, 24, 0), style="Monitor.TFrame")
+        body.grid(row=1, column=0, sticky="nsew")
+        body.rowconfigure(0, weight=1)
+        body.columnconfigure(0, weight=1)
+        canvas = tk.Canvas(body, background="#f5f7fb", highlightthickness=0, height=220)
+        canvas.grid(row=0, column=0, sticky="nsew")
+        scrollbar = ttk.Scrollbar(body, orient="vertical", command=canvas.yview)
+        scrollbar.grid(row=0, column=1, sticky="ns", padx=(8, 0))
+        canvas.configure(yscrollcommand=scrollbar.set)
+        content = ttk.Frame(canvas, style="Monitor.TFrame")
+        content.columnconfigure(0, weight=1)
+        window = canvas.create_window(0, 0, window=content, anchor="nw")
+        prompt_label = ttk.Label(content, text=prompt, wraplength=540, justify="left",
+                                 style="Monitor.TLabel")
+        prompt_label.grid(row=0, column=0, sticky="ew", pady=(0, 16))
         selected = tk.StringVar(value=choices[0] if choices else "")
-        for index, choice in enumerate(choices):
-            tk.Radiobutton(frame, text=choice, value=choice, variable=selected,
-                           wraplength=560, justify="left", anchor="w").grid(
-                row=index + 1, column=0, columnspan=2, sticky="w", pady=3)
+        wrapped = [prompt_label]
+        focus = None
+        if choices is None:
+            focus = ttk.Entry(content, textvariable=selected, font=("Microsoft JhengHei UI", 11))
+            focus.grid(row=1, column=0, sticky="ew", pady=(0, 8), ipady=5)
+        else:
+            for index, choice in enumerate(choices):
+                option = tk.Radiobutton(content, text=choice, value=choice, variable=selected,
+                                        wraplength=520, justify="left", anchor="w",
+                                        background="#ffffff", activebackground="#e8effb",
+                                        foreground="#18263b", selectcolor="#ffffff",
+                                        font=("Microsoft JhengHei UI", 10), padx=12, pady=10,
+                                        relief="flat", borderwidth=0, highlightthickness=1,
+                                        highlightbackground="#dce2ec", highlightcolor="#315fbc")
+                option.grid(row=index + 1, column=0, sticky="ew", pady=(0, 8))
+                wrapped.append(option)
+                if focus is None:
+                    focus = option
+        def reveal(widget):
+            root.update_idletasks()
+            top = widget.winfo_y()
+            bottom = top + widget.winfo_height()
+            visible_top = canvas.canvasy(0)
+            visible_bottom = visible_top + canvas.winfo_height()
+            if top < visible_top:
+                canvas.yview_moveto(top / max(1, content.winfo_height()))
+            elif bottom > visible_bottom:
+                canvas.yview_moveto((bottom - canvas.winfo_height()) / max(1, content.winfo_height()))
+        for widget in ([focus] if choices is None else wrapped[1:]):
+            widget.bind("<FocusIn>", lambda event: reveal(event.widget))
+        def resize(event):
+            canvas.itemconfigure(window, width=event.width)
+            heading.configure(wraplength=max(80, event.width))
+            for widget in wrapped:
+                widget.configure(wraplength=max(80, event.width - 44))
+        canvas.bind("<Configure>", resize)
+        content.bind("<Configure>", lambda event: canvas.configure(scrollregion=canvas.bbox("all")))
+        root.bind("<MouseWheel>", lambda event: canvas.yview_scroll(-int(event.delta / 120), "units"))
         def confirm():
             answer.append(selected.get())
             root.destroy()
-        ttk.Button(frame, text="稍後", command=root.destroy).grid(
-            row=len(choices) + 1, column=0, sticky="e", pady=(12, 0))
-        ttk.Button(frame, text="確認", command=confirm).grid(
-            row=len(choices) + 1, column=1, sticky="e", padx=(8, 0), pady=(12, 0))
-        root.bind("<Return>", lambda event: confirm())
+        footer = ttk.Frame(root, padding=(24, 16, 24, 20), style="Monitor.TFrame")
+        footer.grid(row=2, column=0, sticky="ew")
+        footer.columnconfigure(0, weight=1)
+        ttk.Label(footer, text="Enter 確認  ·  Esc 稍後", style="Monitor.Hint.TLabel").grid(
+            row=0, column=0, sticky="w")
+        cancel = ttk.Button(footer, text="取消" if choices is None else "稍後",
+                            style="Monitor.TButton", command=root.destroy)
+        cancel.grid(row=0, column=1, padx=(12, 8))
+        confirm_button = ttk.Button(footer, text="儲存" if choices is None else "確認",
+                                    style="Monitor.TButton", command=confirm)
+        confirm_button.grid(row=0, column=2)
+        root.bind("<Return>", lambda event: root.destroy() if event.widget == cancel else confirm())
         root.bind("<Escape>", lambda event: root.destroy())
+        root.update_idletasks()
+        width = min(680, root.winfo_screenwidth() - 64)
+        height = min(max(360, content.winfo_reqheight() + 190), root.winfo_screenheight() - 100)
+        root.geometry("{}x{}+{}+{}".format(width, height,
+                      (root.winfo_screenwidth() - width) // 2,
+                      (root.winfo_screenheight() - height) // 2))
+        root.minsize(min(440, width), min(320, height))
         root.deiconify()
+        if focus is not None:
+            reveal(focus)
+            focus.focus_set()
         root.mainloop()
         return answer[0] if answer else ""
     finally:
